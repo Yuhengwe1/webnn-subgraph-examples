@@ -13,7 +13,7 @@ export class GQAConfig {
 
 // Call site:
 // const config = new GQAConfig({do_rotary: true, scale: 0.08838});
-// const GQA = await defineGQASubgraph(builder, operands, config);
+// const GQA = await buildGQASubgraph(builder, operands, config);
 // const {output, present_key, present_value} = builder.subgraph(GQA, operands);
 
 export async function buildGQASubgraph(builder, operands, config) {
@@ -31,14 +31,14 @@ export async function buildGQASubgraph(builder, operands, config) {
 }
 
 function buildGQABody(builder, inputs, config) {
-  // Input descriptors and cache positions.
+  // Input descriptors and cache positions
   let {query, key} = inputs;
   const {value, past_key, past_value, seqlens_k, total_sequence_length} = inputs;
   const [batchSize, numQueryHeads, queryLength, headSize] = query.shape;
   const [, numKVHeads, maxLength] = past_key.shape;
   const cachePositions = buildCachePositions(builder, seqlens_k, queryLength);
 
-  // RoPE (Optional).
+  // RoPE (Optional)
   if (config.do_rotary) {
     const rotaryPositions = inputs.position_ids ?? cachePositions;
     query = buildRoPE(builder, query, rotaryPositions, inputs.cos_cache, inputs.sin_cache);
@@ -64,7 +64,7 @@ function buildGQABody(builder, inputs, config) {
   const probabilities = builder.softmax(builder.add(scores, mask), 3);
   const attention = builder.matmul(probabilities, repeatedValue);
 
-  // Output layout.
+  // Output layout
   const output = builder.reshape(
     builder.transpose(attention, {permutation: [0, 2, 1, 3]}),
     [batchSize, queryLength, numQueryHeads * headSize]);
@@ -95,11 +95,11 @@ function buildRoPE(builder, operand, positions, cosCache, sinCache) {
 
 // Pseudocode shorthand, not new WebNN operations:
 // buildCachePositions(builder, seqlens_k, queryLength): signed subtract/add with a token range;
-//   cachePositions[batch, token] = seqlens_k[batch] + 1 - queryLength + token.
-// buildCacheIndices(builder, cachePositions, numKVHeads): expand/concat indices
-//   [batch, KV head, cachePositions[batch, token]], shape [batchSize,numKVHeads,queryLength,3].
+//
+// buildCacheIndices(builder, cachePositions, numKVHeads): expand/concat indices;
+//
 // buildCausalMask(builder, cachePositions, totalSequenceLength, maxLength, dataType):
 //   visible = keyIndex <= cachePositions AND keyIndex < totalSequenceLength;
 //   use where to produce 0 for visible keys, -Infinity otherwise;
-//   shape [batchSize,1,queryLength,maxLength].
+//
 // scalarConstant(builder, dataType, value): builder.constant with typed scalar data.

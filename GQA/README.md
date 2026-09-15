@@ -32,13 +32,11 @@ const {output, present_key, present_value} = builder.subgraph(GQA, operands);
 
 `GQAConfig` here is a data-only JavaScript class in the example, not a WebNN API type.
 
-The definition helper uses the surrounding graph's `builder`. It creates formal inputs from the supplied operands' shapes and data types, constructs the body using `config`, then returns:
+The definition helper uses the surrounding graph's `builder`. It creates formal inputs from the supplied operands' shapes and data types, constructs the body using `config`:
 
 ```js
 builder.buildSubgraph(outputs, {name: "GQA", inputs, config});
 ```
-
-In this proposed API, `buildSubgraph()` scopes the listed formal inputs to the subgraph definition and leaves the builder available for further graph construction. `builder.subgraph(GQA, operands)` binds the surrounding operands to those inputs by name.
 
 ### Inputs and outputs
 
@@ -51,15 +49,13 @@ Input names follow [contrib GQA](https://github.com/microsoft/onnxruntime/blob/m
 | `seqlens_k` | Required: each batch item's valid total length after this call minus one |
 | `total_sequence_length` | Required: maximum valid total length across the batch |
 | `cos_cache`, `sin_cache` | Rotary tables, required only when `do_rotary` is enabled |
-| `position_ids` | Optional explicit ROPE positions |
+| `position_ids` | Optional explicit RoPE positions |
 
 The subgraph returns **three outputs**: `output`, `present_key`, and `present_value`.
 
 ### Attaching config to a subgraph
 
-A subgraph boundary identifies a functional region, but its primitive operations do not always make the original high-level choices explicit. Attaching config to the definition can preserve information that is difficult or impossible to recover from the decomposed body:
+Config expresses the high-level choices used to construct a subgraph. In this example, it serves two related purposes:
 
-- **Difficult to recover: `do_rotary`.** Recognizing ROPE requires matching a pattern of primitive operations. An explicit flag records this choice and controls whether the subgraph includes the ROPE region.
-- **Impossible to recover exactly: the original `scale`.** Distinct FP32 values such as `0.08838` and `0.08839` both round to the FP16 multiplier `0.08837890625`. The primitive constant cannot distinguish them; config can retain the original value.
-
-Shapes, head counts, and data types can be read from operand descriptors, so they need not be duplicated in config. 
+- **Configure the body.** `do_rotary` selects whether to construct the RoPE region. This is a graph-construction choice, not a runtime tensor input or merely a hint for backend matching.
+- **Keep those choices explicit.** Attaching the same config to the subgraph records which variant was constructed and which parameters were supplied. A consumer can read the inlined-RoPE choice without recognizing its primitive pattern. Config can also retain information lost during construction: distinct FP32 scales such as `0.08838` and `0.08839` both round to the FP16 multiplier `0.08837890625`, so the primitive constant cannot identify the original value, which may results in an accuracy issue.
